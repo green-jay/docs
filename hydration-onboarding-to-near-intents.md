@@ -18,7 +18,7 @@ Discussion document for integrating Hydration (Polkadot parachain) into NEAR Int
 1. [Introduction](#1-introduction)
 2. [Prerequisites & Requirements](#2-prerequisites--requirements)
 3. [Architecture Overview](#3-architecture-overview)
-4. [Signature Support - Sr25519](#4-signature-support---sr25519)
+4. [Signature Support and Chain Signatures](#4-signature-support-and-chain-signatures)
 5. [Bridge Integration](#5-bridge-integration)
 6. [Verifier Smart Contract Integration](#6-verifier-smart-contract-integration)
 7. [SDK & Tooling Integration](#7-sdk--tooling-integration)
@@ -28,6 +28,8 @@ Discussion document for integrating Hydration (Polkadot parachain) into NEAR Int
 11. [Documentation Updates](#11-documentation-updates)
 12. [Deployment Checklist](#12-deployment-checklist)
 13. [Open Questions](#13-open-questions)
+14. [Success Criteria](#14-success-criteria)
+15. [Contact & Next Steps](#15-contact--next-steps)
 
 ---
 
@@ -213,9 +215,9 @@ See Section 5 for detailed bridge options analysis.
       │ Chain Features:                      │
       │ • Asset Registry (u32 IDs)          │
       │ • Omnipool DEX                       │
-      │ • EVM compatibility (Frontier)       │
       │ • Multi-asset fee payment            │
-      │ • Dual signatures (sr25519/ECDSA)   │
+      │ • Dual signatures (sr25519 + ECDSA) │
+      │ • EVM compatibility (Frontier)       │
       └──────────────────────────────────────┘
 ```
 
@@ -233,9 +235,10 @@ Hydration ←→ XCM ←→ Moonbeam ←→ Wormhole ←→ NEAR
 ### 3.4 Key Integration Points
 
 1. **Signature Support**
-   - Sr25519 for Hydration Substrate accounts (Polkadot.js, Talisman, etc.)
-   - ECDSA for Hydration EVM accounts (MetaMask, etc.)
-   - Verifier contract must support sr25519 (PR #171)
+   - Sr25519 for Hydration Substrate accounts (Polkadot.js, Talisman, SubWallet, Nova)
+   - ECDSA for Hydration EVM accounts (MetaMask, Rabby, etc.)
+   - Verifier contract must support both sr25519 (PR #171) and ECDSA signatures
+   - MPC contract must support sr25519 for Chain Signatures
 
 2. **Asset Identifiers**
    - Format: `polkadot:afdc188f45c71dacbaa0b62e16a91f726c7b8699a9748cdf715459de6b7f366d:{assetId}`
@@ -262,47 +265,235 @@ Chains.Hydration: "polkadot:afdc188f45c71dacbaa0b62e16a91f726c7b8699a9748cdf7154
 
 ---
 
-## 4. Signature Support - Sr25519
+## 4. Signature Support and Chain Signatures
 
-### 4.1 Current Status
+### 4.1 Overview
+
+Hydration-NEAR integration requires **dual signature support** for bidirectional transactions:
+
+**Hydration → NEAR** (Signing NEAR Intents):
+- **Sr25519**: Substrate accounts via Polkadot wallets (Talisman, Polkadot.js, SubWallet, Nova)
+- **ECDSA**: EVM accounts via MetaMask, Rabby, and other EVM wallets
+
+**NEAR → Hydration** (Chain Signatures):
+- **Sr25519**: MPC-based signing for native Substrate transactions
 
 **PR #171**: "Add support for sr25519 signatures"  
 **Repository**: https://github.com/near/intents/pull/171  
-**Status**: In review (as of research date)
+**Status**: In progress - enables both directions
 
-This PR adds comprehensive sr25519 support including:
+**Key Components**:
+- **NEAR Intents Verifier**: Verifies sr25519 signatures from Polkadot wallets (Talisman, Polkadot.js, SubWallet, Nova)
+- **MPC Contract**: `v1.signer` (mainnet) / `v1.signer-prod.testnet` (testnet)
+- **Chain Signatures Library**: [`chainsig.js`](https://github.com/NearDeFi/chainsig.js)
+- **Documentation**: https://docs.near.org/chain-abstraction/chain-signatures
+
+### 4.2 Verifier Contract Signature Support
+
+**PR #171**: Adds sr25519 support to NEAR Intents Verifier
+
+**Sr25519 Implementation** (for Polkadot wallets):
 - Sr25519 curve implementation using `schnorrkel` library
-- SignedSr25519Payload type
-- Integration into MultiPayload enum
+- `SignedSr25519Payload` type for Polkadot wallet signatures
+- Integration into `MultiPayload` enum
 - Public key and signature parsing
-- Verification logic
+- Verification logic for Substrate-signed messages
+- Handles `<Bytes>` message wrapping from Polkadot wallets
 
-### 4.2 Message Wrapping
+**ECDSA Implementation** (for EVM wallets):
+- Already supported in NEAR Intents Verifier
+- Standard secp256k1 signature verification
+- EIP-191 and EIP-712 message signing support
+- Compatible with MetaMask, Rabby, and other EVM wallets
+- Uses Hydration EVM addresses (0x format)
 
-Polkadot wallets (like Talisman, Polkadot.js) wrap signed messages with:
+**MPC Contract Enhancements**:
+- Add sr25519 signature generation capability
+- Implement Schnorrkel/Ristretto curve operations for 8 validator nodes
+- Support `keyType: 'Sr25519'` in sign requests
+- Enable NEAR accounts to derive and control Hydration addresses
+
+### 4.3 Bidirectional Signing Flow
+
+#### Hydration → NEAR (Substrate Wallets)
+
+**User Flow**:
+1. Hydration user opens Polkadot wallet (Talisman/Polkadot.js/SubWallet/Nova)
+2. Creates NEAR intent via 1-Click API
+3. Wallet signs intent message with sr25519 private key
+4. Signature includes `<Bytes>` wrapping
+5. NEAR Intents Verifier validates sr25519 signature using PR #171 implementation
+
+**Technical Requirements**:
+- SS58 address format support (Hydration uses prefix 0)
+- Sr25519 signature verification in Verifier contract
+- Polkadot wallet integration testing
+
+#### Hydration → NEAR (EVM Wallets)
+
+**User Flow**:
+1. Hydration user connects MetaMask (or Rabby) to Hydration EVM (Chain ID 222222)
+2. Creates NEAR intent via 1-Click API
+3. Wallet signs intent message with ECDSA (secp256k1)
+4. Signature follows EIP-191 or EIP-712 standard
+5. NEAR Intents Verifier validates ECDSA signature (already supported)
+
+**Technical Requirements**:
+- Hydration EVM address support (0x format)
+- ECDSA signature verification in Verifier contract (already implemented)
+- EVM wallet integration testing (MetaMask, Rabby)
+
+#### NEAR → Hydration (Chain Signatures MPC)
+
+**User Flow**:
+1. NEAR user creates transaction intent for Hydration
+2. MPC derives Hydration address from NEAR account + derivation path
+3. Unsigned Hydration extrinsic is created (SCALE encoded)
+4. MPC contract signs extrinsic hash with sr25519
+5. Signed transaction is broadcast to Hydration RPC
+
+**Technical Requirements**:
+- Substrate chain adapter in `chainsig.js`
+- SS58 address derivation from NEAR account paths
+- SCALE codec encoding/decoding
+- Hydration metadata integration (runtime version, spec version)
+- Extrinsic signing and broadcast
+
+### 4.4 Implementation Requirements
+
+#### MPC Contract (PR #171)
+- Sr25519 signature support for 8 MPC validator nodes
+- Schnorrkel/Ristretto curve operations
+- `keyType: 'Sr25519'` support in sign method
+- Integration with NEAR Protocol's existing MPC infrastructure
+
+#### Substrate Chain Adapter (chainsig.js)
+- Create `Substrate` adapter in [`@neardefi/chainsig.js`](https://github.com/NearDeFi/chainsig.js)
+- SS58 address derivation from NEAR account + derivation path
+- SCALE codec encoding/decoding for Hydration extrinsics
+- Extrinsic signing and serialization
+- Hydration-specific runtime metadata integration
+
+#### Verifier Contract Updates
+- Sr25519 signature verification for Polkadot wallet signatures
+- Message wrapping handling (`<Bytes>` format)
+- Substrate address format support (SS58 prefix 0)
+
+**Implementation Example**:
+```typescript
+import { Substrate } from '@neardefi/chainsig.js/chain-adapters/substrate'
+import { ChainSignatureContract } from '@neardefi/chainsig.js/contracts'
+
+const contract = new ChainSignatureContract({
+  networkId: 'mainnet',
+  contractId: 'v1.signer'
+})
+
+const substrateAdapter = new Substrate({
+  rpcUrl: 'wss://rpc.hydradx.cloud',
+  contract: contract,
+  genesisHash: '0xafdc188f45c71dacbaa0b62e16a91f726c7b8699a9748cdf715459de6b7f366d',
+  specVersion: 280, // Hydration runtime version
+  transactionVersion: 1
+})
+
+// Derive Hydration address from NEAR account
+const { address, publicKey } = await substrateAdapter.deriveAddressAndPublicKey(
+  'alice.near',
+  'hydration-1'
+)
+// address: 7L53bUTBopuwFt3mKUfmkzgGLayYa1Yvn1hAg9v5UMrQzTfh (SS58 format)
+
+// Create Hydration Omnipool swap transaction
+const { transaction, hashesToSign } = await substrateAdapter.prepareTransactionForSigning({
+  pallet: 'Omnipool',
+  call: 'sell',
+  args: {
+    assetIn: 0,  // HDX
+    assetOut: 10, // USDT
+    amount: '1000000000000', // 1 HDX (12 decimals)
+    minBuyAmount: '950000' // Min 0.95 USDT (6 decimals)
+  }
+})
+
+// Sign with NEAR MPC
+const signatures = await contract.sign({
+  payloads: hashesToSign,
+  path: 'hydration-1',
+  keyType: 'Sr25519',
+  signerAccount: {
+    accountId: 'alice.near',
+    signAndSendTransactions: nearAccount.signAndSendTransactions
+  }
+})
+
+// Finalize and broadcast
+const signedTx = substrateAdapter.finalizeTransactionSigning({
+  transaction,
+  rsvSignatures: signatures
+})
+
+const { hash } = await substrateAdapter.broadcastTx(signedTx)
+console.log(`Hydration tx: https://hydration.subscan.io/extrinsic/${hash}`)
 ```
-<Bytes>...message content...</Bytes>
-```
 
-The verification implementation must handle this wrapping at the verification stage, not in the JSON payload.
+### 4.5 Development Roadmap
 
-### 4.3 Required Actions
+#### Phase 1: PR #171 Completion
+- Finalize sr25519 implementation in NEAR Intents Verifier
+- Complete MPC contract sr25519 support
+- Test with Polkadot wallets (Talisman, Polkadot.js, SubWallet, Nova)
+- Deploy to testnet for validation
 
-1. **Complete PR #171 Review & Merge**
-   - Ensure all test cases pass, especially with real Polkadot/Substrate wallets
-   - Verify wallet signature test with Talisman or PolkadotJS wallet
-   - Document signing context requirements
+#### Phase 2: Substrate Chain Adapter
+- Develop Substrate adapter in `@neardefi/chainsig.js`
+- Implement SS58 address derivation
+- Add SCALE codec support for Hydration extrinsics
+- Integrate Hydration runtime metadata
 
-2. **Wallet Integration Testing**
-   - Test with Talisman wallet
-   - Test with Polkadot.js extension
-   - Test with SubWallet
-   - Test with Nova Wallet
+#### Phase 3: Integration Testing
+- Test on Hydration testnet (Paseo)
+- Validate bidirectional signing:
+  - Hydration → NEAR (Polkadot wallet signatures)
+  - NEAR → Hydration (Chain Signatures MPC)
+- Test Omnipool, Stableswap, Trade Router interactions
+- End-to-end testing with NEAR Intents ecosystem
 
-3. **Add to Chain Support Documentation**
-   - Update `chain-address-support.md` with Hydration support
-   - Document address format requirements
-   - Add signing standard (Sr25519/Substrate) to table
+#### Phase 4: Production Deployment
+- Deploy updated MPC contract to mainnet
+- Release Substrate adapter in chainsig.js
+- Update chain support documentation
+- Coordinate mainnet launch with both teams
+
+### 4.6 Wallet Integration Testing
+
+**Polkadot Wallet Support** (Hydration → NEAR, Sr25519):
+- **Talisman**: Test sr25519 signature with message wrapping
+- **Polkadot.js Extension**: Verify signing context handling
+- **SubWallet**: Validate multi-chain account derivation
+- **Nova Wallet**: Mobile wallet integration testing
+- **Address Format**: SS58 with prefix 0 (e.g., `7L53bUTBopuwFt3mKUfmkzgGLayYa1Yvn1hAg9v5UMrQzTfh`)
+
+**EVM Wallet Support** (Hydration → NEAR, ECDSA):
+- **MetaMask**: Test ECDSA signature with EIP-191/EIP-712
+- **Rabby**: Verify multi-chain switching and signing
+- **Trust Wallet**: Mobile EVM wallet testing
+- **Coinbase Wallet**: Additional browser wallet coverage
+- **Chain Configuration**: Chain ID 222222, RPC: https://rpc.hydradx.cloud
+- **Address Format**: EVM 0x format (e.g., `0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb`)
+
+**NEAR Wallet Support** (NEAR → Hydration, Sr25519 via MPC):
+- NEAR Wallet integration with Chain Signatures
+- Derivation path management for Hydration addresses
+- Transaction signing flow via MPC contract
+
+**Documentation Updates**:
+- Update `chain-address-support.md` with:
+  - Hydration Substrate addresses (SS58 prefix 0, sr25519)
+  - Hydration EVM addresses (0x format, ECDSA)
+- Document both signature types in supported chains table
+- Provide wallet-specific signing examples for each type
+- Add Chain ID 222222 to EVM chain list
 
 ---
 
@@ -539,12 +730,12 @@ const metadata = await api.query.assetRegistry.assets(10); // USDT
 
 ## 6. Verifier Smart Contract Integration
 
-### 6.1 Repository
+### 12.1 Repository
 
 **Repository**: https://github.com/near/intents  
 **Contract**: Deployed at `intents.near` on NEAR mainnet
 
-### 6.2 Required Changes
+### 12.2 Required Changes
 
 The Verifier contract needs to support:
 
@@ -566,7 +757,7 @@ The Verifier contract needs to support:
    - Hydration addresses need to be mappable to implicit accounts
    - Sr25519 public keys → implicit account derivation
 
-### 6.3 Account Derivation
+### 12.3 Account Derivation
 
 **Implicit Account for Sr25519:**
 ```
@@ -574,7 +765,7 @@ Format: Sr25519 public key (32 bytes) → hex string
 Example: 1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b
 ```
 
-### 6.4 Required Actions
+### 12.4 Required Actions
 
 1. **Verify Account Abstraction Compatibility**
    - Ensure sr25519 public keys properly derive to implicit accounts
@@ -589,11 +780,11 @@ Example: 1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b
 
 ## 7. SDK & Tooling Integration
 
-### 7.1 Intents SDK
+### 12.1 Intents SDK
 
 **Repository**: `defuse-protocol/sdk-monorepo/packages/intents-sdk`
 
-#### 7.1.1 Files to Modify
+#### 12.1.1 Files to Modify
 
 1. **`src/lib/caip2.ts`**
    ```typescript
@@ -625,7 +816,7 @@ Example: 1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b
    - Implement `HydrationBridge` class extending `Bridge` interface
    - Implement `supports()`, `parseAssetId()`, `makeAssetInfo()`, `withdraw()` methods
 
-#### 7.1.2 Type Definitions
+#### 12.1.2 Type Definitions
 
 **`src/shared-types.ts`**
 ```typescript
@@ -643,7 +834,7 @@ export enum RouteEnum {
 }
 ```
 
-#### 7.1.3 Asset ID Format
+#### 12.1.3 Asset ID Format
 
 Define Hydration asset ID parsing:
 ```typescript
@@ -654,7 +845,7 @@ Define Hydration asset ID parsing:
 "nep141:hydration-<asset-id>.bridge.near"
 ```
 
-### 7.2 Cross-Chain Asset ID Package
+### 12.2 Cross-Chain Asset ID Package
 
 **Repository**: `defuse-protocol/sdk-monorepo/packages/crosschain-assetid`
 
@@ -671,7 +862,7 @@ const stringSchema = {
 };
 ```
 
-### 7.3 Required Actions
+### 12.3 Required Actions
 
 1. **Add RPC Configuration**
    - Provide default public RPC URLs (see Section 2.1.1)
@@ -691,15 +882,15 @@ const stringSchema = {
 
 ## 8. 1-Click API Integration
 
-### 8.1 Overview
+### 12.1 Overview
 
 The 1-Click API provides a simplified REST API for executing cross-chain swaps. It abstracts away the complexity of intent creation, solver coordination, and transaction execution.
 
 **Base URL**: `https://1click.chaindefuser.com/`
 
-### 8.2 Required Changes
+### 12.2 Required Changes
 
-#### 8.2.1 Token Registry
+#### 12.2.1 Token Registry
 
 **Endpoint**: `GET /v0/tokens`
 
@@ -715,7 +906,7 @@ Add Hydration tokens to the supported tokens list:
 }
 ```
 
-#### 8.2.2 Quote Endpoint
+#### 12.2.2 Quote Endpoint
 
 **Endpoint**: `POST /v0/quote`
 
@@ -725,13 +916,13 @@ Ensure Hydration tokens are supported in:
 - Deposit address generation for Hydration network
 - Fee calculation for Hydration
 
-#### 8.2.3 Deposit Address Generation
+#### 12.2.3 Deposit Address Generation
 
 The 1-Click API must be able to generate:
 - Hydration-compatible deposit addresses (SS58 format)
 - Unique addresses per quote for tracking
 
-#### 8.2.4 Status Monitoring
+#### 12.2.4 Status Monitoring
 
 **Endpoint**: `GET /v0/status`
 
@@ -740,7 +931,7 @@ Ensure status tracking works for Hydration transactions:
 - Track bridge transaction status
 - Update intent execution status
 
-### 8.3 TypeScript SDK
+### 12.3 TypeScript SDK
 
 **Repository**: `https://github.com/defuse-protocol/one-click-sdk-typescript`
 
@@ -755,7 +946,7 @@ Ensure status tracking works for Hydration transactions:
 3. **Examples**
    - Add example swap involving Hydration
 
-### 8.4 Required Actions
+### 12.4 Required Actions
 
 1. **Backend Integration**
    - Add Hydration blockchain indexing
@@ -776,7 +967,7 @@ Ensure status tracking works for Hydration transactions:
 
 ## 9. Message Bus Integration
 
-### 9.1 Overview
+### 12.1 Overview
 
 The Message Bus is an off-chain component that optimizes price discovery and matches user intents with market maker quotes. It consists of the Solver Relay service that connects distribution channels (wallets, apps) with market makers (solvers).
 
@@ -785,11 +976,11 @@ The Message Bus is an off-chain component that optimizes price discovery and mat
 **WebSocket**: `wss://solver-relay-v2.chaindefuser.com/ws`  
 **Documentation**: See `market-makers/bus/solver-relay.md` in this repository
 
-### 9.2 Solver Relay API Changes
+### 12.2 Solver Relay API Changes
 
 The Solver Relay API uses Defuse Asset Identifiers in the format used throughout the system.
 
-#### 9.2.1 Quote Request Support
+#### 12.2.1 Quote Request Support
 
 **Method**: `get_quote_response`
 
@@ -836,7 +1027,7 @@ The Solver Relay API uses Defuse Asset Identifiers in the format used throughout
 }
 ```
 
-#### 9.2.2 Intent Execution Support
+#### 12.2.2 Intent Execution Support
 
 **Method**: `execute_intent`
 
@@ -854,9 +1045,9 @@ The Solver Relay API uses Defuse Asset Identifiers in the format used throughout
 }
 ```
 
-### 9.3 Required Changes
+### 12.3 Required Changes
 
-#### 9.3.1 Solver Configuration
+#### 12.3.1 Solver Configuration
 
 Solvers need to support Hydration asset pricing and liquidity:
 
@@ -887,7 +1078,7 @@ Solvers need to support Hydration asset pricing and liquidity:
    - Track Wormhole VAA confirmations
    - Verify NEAR token bridge mints
 
-#### 9.3.2 Message Bus Updates
+#### 12.3.2 Message Bus Updates
 
 **No code changes required** - the Solver Relay is asset-agnostic and uses Defuse Asset Identifiers. However, operational configuration may need updates:
 
@@ -899,7 +1090,7 @@ Solvers need to support Hydration asset pricing and liquidity:
    - Add Hydration RPC health checks
    - Monitor bridge transaction status
 
-### 9.4 Solver Onboarding Documentation
+### 12.4 Solver Onboarding Documentation
 
 Market makers integrating Hydration support need:
 
@@ -936,7 +1127,7 @@ Market makers integrating Hydration support need:
    - Expected quote response times
    - Settlement time SLAs
 
-### 9.5 Required Actions
+### 12.5 Required Actions
 
 1. **Message Bus Configuration**
    - Add Hydration chain to asset registry
@@ -957,7 +1148,7 @@ Market makers integrating Hydration support need:
 
 ## 10. Testing & Validation
 
-### 10.1 Unit Tests
+### 12.1 Unit Tests
 
 **Repositories to Add Tests:**
 
@@ -976,7 +1167,7 @@ Market makers integrating Hydration support need:
    - Test Hydration asset ID parsing
    - Test asset ID stringification
 
-### 10.2 Integration Tests
+### 12.2 Integration Tests
 
 1. **End-to-End Swap Flow**
    ```
@@ -1003,7 +1194,7 @@ Market makers integrating Hydration support need:
    - Test complex multi-chain swaps involving Hydration
    ```
 
-### 10.3 Wallet Testing
+### 12.3 Wallet Testing
 
 Test with actual Hydration-compatible wallets:
 - **Talisman Wallet** (Substrate universal wallet)
@@ -1011,7 +1202,7 @@ Test with actual Hydration-compatible wallets:
 - **SubWallet**
 - **Nova Wallet** (mobile)
 
-### 10.4 Mainnet Testing Checklist
+### 12.4 Mainnet Testing Checklist
 
 Before full mainnet launch:
 - [ ] Small test deposits (<$10 value)
@@ -1026,7 +1217,7 @@ Before full mainnet launch:
 
 ## 11. Documentation Updates
 
-### 11.1 Files to Update
+### 12.1 Files to Update
 
 **Repository**: `https://github.com/defuse-protocol/docs`
 
@@ -1064,7 +1255,7 @@ Dedicated page explaining:
 - Wallet connection guide
 - Example swap flows
 
-### 11.2 SDK Documentation
+### 12.2 SDK Documentation
 
 **Repository**: `defuse-protocol/sdk-monorepo/packages/intents-sdk`
 
@@ -1089,7 +1280,7 @@ await sdk.withdraw({
 });
 ```
 
-### 11.3 Required Actions
+### 12.3 Required Actions
 
 1. **Update Chain Support Documentation**
    - Add Hydration to all relevant tables
