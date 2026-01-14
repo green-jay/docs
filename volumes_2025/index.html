@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Volume by Asset by Month</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        .chart-container {
+            position: relative;
+            height: 600px;
+            margin-top: 30px;
+        }
+        .controls {
+            margin: 20px 0;
+            text-align: center;
+        }
+        select {
+            padding: 8px 15px;
+            font-size: 14px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin: 0 10px;
+        }
+        .info {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Volume by Asset by Month</h1>
+        
+        <div class="controls">
+            <label for="chartType">Chart Type:</label>
+            <select id="chartType" onchange="updateChart()">
+                <option value="line">Line Chart</option>
+                <option value="bar">Bar Chart</option>
+                <option value="stackedBar" selected>Stacked Bar Chart</option>
+            </select>
+            
+            <label for="assetFilter">Filter Assets (min volume):</label>
+            <select id="assetFilter" onchange="updateChart()">
+                <option value="0">All Assets</option>
+                <option value="1000000">Above 1M</option>
+                <option value="5000000">Above 5M</option>
+                <option value="10000000">Above 10M</option>
+                <option value="20000000" selected>Above 20M</option>
+            </select>
+        </div>
+        
+        <div class="chart-container">
+            <canvas id="volumeChart"></canvas>
+        </div>
+        
+        <div class="info">
+            <strong>Note:</strong> Hover over the chart to see exact values. Click on legend items to show/hide assets.
+        </div>
+    </div>
+
+    <script>
+        const data = {
+            months: ['July 2025', 'August 2025', 'September 2025', 'October 2025', 'November 2025'],
+            assets: {
+                'HDX': [1912531.401, 1756287.801, 1544009.463, 2296146.827, 1238625.832],
+                'DOT': [31037148.67, 33321373.07, 31966091.64, 42753044.73, 37426928.14],
+                'ASTR': [2670757.661, 2487280.398, 3257629.688, 7832211.551, 4365261.215],
+                'USDT': [46445374.358, 58779691.05, 48407368.054, 78928275.439, 61668717.143],
+                'iBTC': [89722.83578, 264498.6414, 42502.86621, 35937.88223, 7730.518871],
+                'BNC': [379177.0128, 417428.1505, 185340.6752, 364584.3882, 721241.4735],
+                'vDOT': [4374227.989, 26938719.12, 6370282.704, 27588716.75, 13452956.18],
+                'GLMR': [1950512.755, 1569142.013, 1467859.346, 2895554.394, 1936162.722],
+                'DAI': [66925.30248, 2458.673483, 80661.79037, 69087.2066, 1570.968116],
+                'WBTC': [872644.9877, 1519597.531, 679807.8006, 1651288.128, 596128.6563],
+                'WETH': [0, 3070429.869, 1298627.722, 647620.2469, 359342.2165],
+                'USDC': [13297189.66, 21392548.331, 17326425.717, 35184685.605, 25410466.046],
+                'vASTR': [143031.3251, 216816.1215, 216519.1258, 521653.9704, 221106.351],
+                'TRAC': [707748.2784, 1114831.782, 1141967.52, 7882284.332, 3929613.906],
+                'ENA': [0, 0, 0, 738441.491, 1575510.313],
+                'PAXG': [0, 0, 0, 1935191.188, 5993449.893],
+                '2-Pool': [44282388.31, 56982323.14, 48650416.49, 76512210.29, 64756956.49],
+                'AAVE': [2677656.875, 4443986.654, 5287347.329, 5385981.973, 4484263.148],
+                'sUSDe': [0, 0, 551218.4212, 1375892.097, 233399.1746],
+                'sUSDS': [0, 0, 388629.408, 1238615.406, 581903.9145],
+                'SOL': [408390.3255, 4093568.219, 4683168.39, 7660858.656, 4190840.196],
+                'SUI': [0, 0, 1003487.017, 4826495.347, 2911896.139],
+                'tBTC': [2770323.19, 5484250.963, 5437081.476, 9572196.979, 7029365.554],
+                'KSM': [2419501.078, 2467545.157, 1612887.935, 3278488.968, 4616810.14],
+                'LINK': [2076502.561, 5838301.562, 2687968.563, 5030087.401, 3826785.696],
+                'SKY': [870562.046, 1157317.115, 1972647.253, 1652755.959, 1214044.665],
+                'LDO': [110997.0593, 3293204.213, 2130597.624, 3589173.369, 2655001.758],
+                'wstETH': [4005296.305, 3051147.112, 1829449.282, 2652235.752, 649271.3297],
+                'aDOT': [12018380.29, 47815411.26, 24471664.39, 62307575.11, 13158794.49],
+                'aETH': [9786400.57, 14476731.75, 13110630.82, 16706592.78, 12164051.48],
+                'aUSDC': [0, 0, 1917883.372, 8843786.122, 5802191.885],
+                'HOLLAR': [0, 0, 4988342.691, 21752101.36, 16907064.74],
+                'GETH': [5827824.24, 12795058.01, 7795871.532, 12591766.1, 13059891.28],
+                'aUSDT': [4213063.025, 4488916.803, 7038123.043, 19777442.13, 11101862.36]
+            }
+        };
+
+        const colors = [
+            '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
+            '#FF9F40', '#FF6384', '#C9CBCF', '#4BC0C0', '#FF6384',
+            '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF', '#FF9F40',
+            '#E7E9ED', '#36A2EB', '#FFCE56', '#FF6384', '#9966FF',
+            '#FF9F40', '#4BC0C0', '#36A2EB', '#FFCE56', '#FF6384',
+            '#9966FF', '#FF9F40', '#4BC0C0', '#36A2EB', '#FFCE56',
+            '#FF6384', '#9966FF', '#FF9F40'
+        ];
+
+        let chart = null;
+
+        function getFilteredAssets() {
+            const minVolume = parseFloat(document.getElementById('assetFilter').value);
+            const filtered = {};
+            
+            Object.entries(data.assets).forEach(([asset, volumes]) => {
+                const maxVolume = Math.max(...volumes);
+                if (maxVolume >= minVolume) {
+                    filtered[asset] = volumes;
+                }
+            });
+            
+            return filtered;
+        }
+
+        function updateChart() {
+            const chartType = document.getElementById('chartType').value;
+            const filteredAssets = getFilteredAssets();
+            
+            const datasets = Object.entries(filteredAssets).map(([asset, volumes], index) => ({
+                label: asset,
+                data: volumes,
+                borderColor: colors[index % colors.length],
+                backgroundColor: colors[index % colors.length] + '80',
+                borderWidth: 2,
+                tension: 0.1,
+                fill: chartType === 'stackedBar'
+            }));
+
+            const config = {
+                type: chartType === 'stackedBar' ? 'bar' : chartType,
+                data: {
+                    labels: data.months,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                            labels: {
+                                boxWidth: 12,
+                                font: {
+                                    size: 11
+                                }
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: 'Trading Volume by Asset (Normalized)',
+                            font: {
+                                size: 16
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    label += new Intl.NumberFormat('en-US', {
+                                        minimumFractionDigits: 2,
+                                        maximumFractionDigits: 2
+                                    }).format(context.parsed.y);
+                                    return label;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            stacked: chartType === 'stackedBar',
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    if (value >= 1000000) {
+                                        return (value / 1000000).toFixed(1) + 'M';
+                                    }
+                                    return value.toLocaleString();
+                                }
+                            },
+                            title: {
+                                display: true,
+                                text: 'Volume'
+                            }
+                        },
+                        x: {
+                            stacked: chartType === 'stackedBar'
+                        }
+                    }
+                }
+            };
+
+            if (chart) {
+                chart.destroy();
+            }
+
+            const ctx = document.getElementById('volumeChart').getContext('2d');
+            chart = new Chart(ctx, config);
+        }
+
+        // Initialize chart on page load
+        updateChart();
+    </script>
+</body>
+</html>
