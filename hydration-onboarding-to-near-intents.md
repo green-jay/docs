@@ -69,7 +69,7 @@ Discussion document for integrating Hydration (Polkadot parachain) into NEAR Int
 - **Architecture**: Substrate-based parachain with EVM compatibility (Frontier pallet)
 - **Block Time**: 6 seconds (average)
 - **Finality**: Polkadot relay chain finality (~12-18 seconds, deterministic via GRANDPA)
-- **Native Token**: HDX (Asset ID: 0, 12 decimals)
+- **Native Token**: HDX (Asset ID: 0, 12 decimals) - used for transaction fees
 - **RPC Endpoints**: See Section 2.1.1 below
 
 #### 2.1.1 Public RPC Endpoints (All Archive Nodes)
@@ -409,10 +409,10 @@ const { transaction, hashesToSign } = await substrateAdapter.prepareTransactionF
   pallet: 'Omnipool',
   call: 'sell',
   args: {
-    assetIn: 0,  // HDX
+    assetIn: 5,  // DOT
     assetOut: 10, // USDT
-    amount: '1000000000000', // 1 HDX (12 decimals)
-    minBuyAmount: '950000' // Min 0.95 USDT (6 decimals)
+    amount: '10000000000', // 1 DOT (10 decimals)
+    minBuyAmount: '7000000' // Min 7 USDT (6 decimals)
   }
 })
 
@@ -664,8 +664,8 @@ pub struct AssetMetadata {
 
 ### 5A.3 Asset Type Categories
 
-1. **Token**: Native blockchain assets (HDX, USDT, USDC, KSM, etc.)
-2. **Erc20**: Assets from Hydration's EVM environment (Frontier/EVM pallet): HOLLAR, HUSDe, HUSDT, GETH, aDOT
+1. **Token**: Native blockchain assets (DOT, USDT, USDC, KSM, etc.)
+2. **Erc20**: Assets from Hydration's EVM environment (Frontier/EVM pallet): HOLLAR, HUSDe, HUSDT, GETH, aDOT (not included in initial test set)
 3. **XYK**: Liquidity pool share tokens (XYK AMM model)
 4. **StableSwap**: Stable pool share tokens
 5. **External**: Cross-chain assets received via XCM
@@ -676,23 +676,23 @@ pub struct AssetMetadata {
 
 | Asset ID | Symbol | Name | Decimals | Type | Use Case |
 |----------|--------|------|----------|------|----------|
-| 0 | HDX | Hydration | 12 | Token | Native token, fee payment |
+| 5 | DOT | Polkadot | 10 | Token | Relay chain token |
 | 10 | USDT | Tether | 6 | Token | Stablecoin |
 | 21 | USDC | USDC (Moonbeam Wormhole) | 6 | Token | Stablecoin (via Wormhole) |
-| 222 | HOLLAR | Hydrated Dollar | 18 | Erc20 | Native stablecoin (Hydration EVM) |
+| TBD | NEAR | NEAR Protocol | TBD | Token | Cross-chain integration (not yet registered on Hydration) |
 
 ### 5A.5 Fee Payment in Multiple Assets
 
 **Multi-Asset Fee Payment**: Hydration supports paying fees in **any Omnipool asset**
 
 **Fee Conversion Mechanism**:
-1. User selects fee payment token (e.g., USDT, USDC, HOLLAR)
+1. User selects fee payment token (e.g., DOT, USDT, USDC, NEAR)
 2. Omnipool automatically converts fee token to HDX
 3. Transaction fees paid in HDX internally
 4. Conversion rate determined by Omnipool spot price
 
 **Initial Test Configuration**:
-- **Supported fee tokens**: USDT (ID 10), USDC (ID 21), HOLLAR (ID 222), HDX (ID 0)
+- **Supported fee tokens**: DOT (ID 5), USDT (ID 10), USDC (ID 21), NEAR (ID TBD)
 - **Default fee token**: The first asset an account receives becomes its default fee payment asset
 
 ### 5A.6 NEAR Token Identifier Mapping
@@ -703,8 +703,8 @@ pub struct AssetMetadata {
 
 **Examples**:
 ```typescript
-// HDX (Native token)
-"polkadot:afdc188f45c71dacbaa0b62e16a91f726c7b8699a9748cdf715459de6b7f366d:0"
+// DOT (Polkadot relay chain token)
+"polkadot:afdc188f45c71dacbaa0b62e16a91f726c7b8699a9748cdf715459de6b7f366d:5"
 
 // USDT
 "polkadot:afdc188f45c71dacbaa0b62e16a91f726c7b8699a9748cdf715459de6b7f366d:10"
@@ -712,8 +712,8 @@ pub struct AssetMetadata {
 // USDC (Wormhole)
 "polkadot:afdc188f45c71dacbaa0b62e16a91f726c7b8699a9748cdf715459de6b7f366d:21"
 
-// HOLLAR
-"polkadot:afdc188f45c71dacbaa0b62e16a91f726c7b8699a9748cdf715459de6b7f366d:222"
+// NEAR (TBD - not yet registered on Hydration)
+"polkadot:afdc188f45c71dacbaa0b62e16a91f726c7b8699a9748cdf715459de6b7f366d:TBD"
 ```
 
 ### 5A.7 Querying Asset Metadata
@@ -747,7 +747,7 @@ The Verifier contract needs to support:
    - **NEP-141**: NEAR's fungible token standard (similar to ERC-20)
      * Bridged Hydration tokens will appear as NEP-141 tokens on NEAR
      * Format: `nep141:hydration-<assetId>.<bridge>.near`
-     * Example: `nep141:hydration-0.omft.near` for HDX
+     * Example: `nep141:hydration-5.omft.near` for DOT
    - **NEP-245**: Multi-token standard used internally by Verifier contract
      * Allows uniform handling of all token types (NEP-141, NEP-171, NEP-245)
      * No contract changes needed - existing implementation supports bridged tokens
@@ -898,11 +898,11 @@ Add Hydration tokens to the supported tokens list:
 ```json
 {
   "blockchain": "hydration",
-  "symbol": "HDX",
-  "assetId": "nep141:hydration-native.bridge.near",
-  "contractAddress": "native",
-  "price": "0.05",
-  "decimals": 12
+  "symbol": "DOT",
+  "assetId": "nep141:hydration-5.bridge.near",
+  "contractAddress": "5",
+  "price": "2.22",
+  "decimals": 10
 }
 ```
 
@@ -987,22 +987,22 @@ The Solver Relay API uses Defuse Asset Identifiers in the format used throughout
 **Hydration Asset Identifiers**:
 ```json
 {
-  "defuse_asset_identifier_in": "polkadot:afdc188f45c71dacbaa0b62e16a91f726c7b8699a9748cdf715459de6b7f366d:0",
+  "defuse_asset_identifier_in": "polkadot:afdc188f45c71dacbaa0b62e16a91f726c7b8699a9748cdf715459de6b7f366d:5",
   "defuse_asset_identifier_out": "near:mainnet:wrap.near",
-  "exact_amount_in": "1000000000000"
+  "exact_amount_in": "10000000000"
 }
 ```
 
-**Example Quote Request** (Swap HDX to NEAR):
+**Example Quote Request** (Swap DOT to NEAR):
 ```json
 {
   "jsonrpc": "2.0",
   "id": 1,
   "method": "get_quote_response",
   "params": {
-    "defuse_asset_identifier_in": "polkadot:afdc188f45c71dacbaa0b62e16a91f726c7b8699a9748cdf715459de6b7f366d:0",
+    "defuse_asset_identifier_in": "polkadot:afdc188f45c71dacbaa0b62e16a91f726c7b8699a9748cdf715459de6b7f366d:5",
     "defuse_asset_identifier_out": "near:mainnet:wrap.near",
-    "exact_amount_in": "1000000000000",
+    "exact_amount_in": "10000000000",
     "min_deadline_ms": 60000
   }
 }
@@ -1016,10 +1016,10 @@ The Solver Relay API uses Defuse Asset Identifiers in the format used throughout
   "result": [
     {
       "quote_hash": "0x1234...",
-      "defuse_asset_identifier_in": "polkadot:afdc188f45c71dacbaa0b62e16a91f726c7b8699a9748cdf715459de6b7f366d:0",
+      "defuse_asset_identifier_in": "polkadot:afdc188f45c71dacbaa0b62e16a91f726c7b8699a9748cdf715459de6b7f366d:5",
       "defuse_asset_identifier_out": "near:mainnet:wrap.near",
-      "amount_in": "1000000000000",
-      "amount_out": "500000000000000000000000",
+      "amount_in": "10000000000",
+      "amount_out": "75000000000000000000000000",
       "expiration_time": 1735689600000,
       "solver_id": "solver1.near"
     }
@@ -1058,10 +1058,10 @@ Solvers need to support Hydration asset pricing and liquidity:
      chainId: "polkadot:afdc188f45c71dacbaa0b62e16a91f726c7b8699a9748cdf715459de6b7f366d",
      rpcUrl: "wss://hydration-rpc.n.dwellir.com",
      supportedAssets: [
-       { assetId: 0, symbol: "HDX", decimals: 12 },
+       { assetId: 5, symbol: "DOT", decimals: 10 },
        { assetId: 10, symbol: "USDT", decimals: 6 },
-       { assetId: 21, symbol: "USDC", decimals: 6 },
-       { assetId: 222, symbol: "HOLLAR", decimals: 18 }
+       { assetId: 21, symbol: "USDC", decimals: 6 }
+       // NEAR to be added once registered on Hydration
      ]
    }
    ```
@@ -1110,10 +1110,10 @@ Market makers integrating Hydration support need:
      includeOnly: [PoolType.Omni, PoolType.Stable, PoolType.XYK]
    });
    
-   // Get best sell route for HDX -> USDT
-   const assetIn = '0';   // HDX
+   // Get best sell route for DOT -> USDT
+   const assetIn = '5';   // DOT
    const assetOut = '10'; // USDT
-   const amountIn = '1000000000000'; // 1 HDX (12 decimals)
+   const amountIn = '10000000000'; // 1 DOT (10 decimals)
    
    const bestRoute = await router.getBestSell(assetIn, assetOut, amountIn);
    console.log('Best route:', bestRoute.swaps);
@@ -1171,26 +1171,26 @@ Market makers integrating Hydration support need:
 
 1. **End-to-End Swap Flow**
    ```
-   Test: NEAR → Hydration HDX
+   Test: NEAR → Hydration DOT
    - User deposits NEAR to Verifier
-   - Create intent to swap NEAR for HDX
+   - Create intent to swap NEAR for DOT
    - Market maker fulfills intent
-   - HDX bridged to Hydration
-   - User receives HDX on Hydration address
+   - DOT bridged to Hydration
+   - User receives DOT on Hydration address
    ```
 
 2. **End-to-End Swap Flow (Reverse)**
    ```
-   Test: Hydration HDX → NEAR
-   - User deposits HDX via Hydration bridge
-   - Create intent to swap HDX for NEAR
+   Test: Hydration DOT → NEAR
+   - User deposits DOT via Hydration bridge
+   - Create intent to swap DOT for NEAR
    - Market maker fulfills intent
    - User withdraws NEAR
    ```
 
 3. **Multi-Hop Swap**
    ```
-   Test: Hydration HDX → USDC (ETH) → ARB
+   Test: Hydration DOT → USDC (ETH) → ARB
    - Test complex multi-chain swaps involving Hydration
    ```
 
@@ -1271,10 +1271,10 @@ const sdk = new IntentsSDK({
   }
 });
 
-// Withdraw HDX to Hydration
+// Withdraw DOT to Hydration
 await sdk.withdraw({
-  assetId: 'nep141:hydration-native.bridge.near',
-  amount: '1000000000000', // 1 HDX (12 decimals)
+  assetId: 'nep141:hydration-5.bridge.near',
+  amount: '10000000000', // 1 DOT (10 decimals)
   recipientAddress: '7L53bUTBopuwFt3mKUfmkzgGLayYa1Yvn1hAg9v5UMrQzTfh',
   routeConfig: createHydrationBridgeRoute(),
 });
@@ -1411,10 +1411,10 @@ Hydration → XCM Message → Moonbeam → Wormhole Contracts → NEAR
 **Asset System**: Numeric Asset IDs (u32) with on-chain metadata
 
 **Initial Test Tokens**:
-- HDX (ID 0): 12 decimals
+- DOT (ID 5): 10 decimals
 - USDT (ID 10): 6 decimals
 - USDC (ID 21): 6 decimals
-- HOLLAR (ID 222): 18 decimals
+- NEAR (ID TBD): TBD decimals (not yet registered on Hydration)
 
 **NEAR Token Mapping Format**: `polkadot:{genesis-hash}:{assetId}`
 
@@ -1444,7 +1444,7 @@ See Section 5A for complete asset system details.
 **Native Fee Token**: HDX (Asset ID 0)
 
 **Multi-Asset Fee Payment**: Supported for any Omnipool asset
-- **Initial test tokens**: USDT, USDC, HOLLAR, HDX
+- **Initial test tokens**: DOT, USDT, USDC, NEAR (once registered)
 - Fee conversion via Omnipool exchange rates
 - Automatic asset-to-HDX conversion for fee payment
 
@@ -1605,7 +1605,7 @@ The Hydration integration will be considered successful when:
 **Asset System**
 - Asset IDs: Numeric (u32), current range 0-1,001,219+
 - Metadata: On-chain via Asset Registry pallet
-- Proposed initial test tokens: HDX (0), USDT (10), USDC (21), HOLLAR (222)
+- Proposed initial test tokens: DOT (5), USDT (10), USDC (21), NEAR (TBD)
 - Fee payment capability: Multi-asset support via Omnipool
 
 ### 2. Bridge Options for Evaluation
@@ -1658,7 +1658,7 @@ The Hydration integration will be considered successful when:
 
 1. **Bridge Strategy**: Which bridge approach aligns best with NEAR Intents architecture and roadmap?
 2. **Timeline**: What are realistic milestones given sr25519 PR status and bridge choice?
-3. **Token Scope**: Start with 4 test tokens (HDX, USDT, USDC, HOLLAR) or broader asset support initially?
+3. **Token Scope**: Start with initial test tokens (DOT, USDT, USDC, and NEAR once registered) or broader asset support initially?
 4. **Fee Handling**: How should multi-asset fees integrate with NEAR Intents fee structure?
 5. **Maintenance**: Operational responsibilities for RPC infrastructure and bridge monitoring?
 6. **Documentation**: What documentation updates needed for Hydration support?
